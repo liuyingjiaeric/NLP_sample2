@@ -1,0 +1,328 @@
+import os
+import numpy as np
+import pickle
+import random
+import pandas as pd
+import pyLDAvis
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import SnowballStemmer
+from nltk.stem import WordNetLemmatizer
+
+import warnings
+warnings.filterwarnings("ignore")
+
+from pyLDAvis import gensim
+
+
+nltk.download('stopwords')
+nltk.download('wordnet')
+
+import itertools
+import patsy as pt
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import random
+
+from jupyterthemes import jtplot
+jtplot.style(theme = 'chesterish')
+
+from gensim.test.utils import common_texts
+from gensim.corpora.dictionary import Dictionary
+from gensim.models.ldamodel import LdaModel
+from gensim.models.coherencemodel import CoherenceModel
+
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.datasets import make_multilabel_classification
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn import preprocessing
+from sklearn import metrics
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import cross_val_score 
+from sklearn.model_selection import GridSearchCV
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+from sklearn.model_selection import cross_val_score
+from sklearn import svm
+
+%%time
+'''
+in Read_data class, I did data clearning such as:
+1. lowercase and remove stop words
+2. remove non-meaningful contents
+3. uniform word form (stemming and lemmatization)
+'''
+
+class Read_data(object):
+    
+    def __init__(self, path):
+        self.path = path
+        
+    def load_text(self):
+        
+        stopWords = stopwords.words('english')
+        file_list = os.listdir(self.path)
+        review = []
+        review_f = []
+        
+        for infile in file_list:
+            file = os.path.join(self.path, infile)
+            r = self.read_data(file)
+            # rule out stop words
+            stopWords = stopwords.words('english')
+            # rule out different word forms
+            snowball_stemmer = SnowballStemmer('english')
+            lemma = WordNetLemmatizer()
+            d = []
+            n = 0
+            alphbet = 'abcdefghijklmnopqrstuvwxyz'
+            for i in r:                
+                i = i.lower()
+                print('the process of lowercase is done')
+                i = snowball_stemmer.stem(i)
+                print('the process of stemming is done')
+                i = lemma.lemmatize(i)
+                print('the process of lemmatization is done')
+                
+                for j in i:
+                    if j not in alphbet:
+                        n += 1
+                if n == 0:
+                    if i not in stopWords:
+                        if (i != 'al') & (i != 'et'):
+                            d.append(i)
+                            review_f.append(i)
+                else:
+                    n = 0
+                print('the process of removing stop words is done')
+                print('the process of removing non mingful words is done')
+                print('data cleaning is done')
+
+            review.append(d)
+        
+        return review, review_f
+    
+    def read_data(self, file):
+        f = open(file, 'rb')  
+        lines = str(f.read()).replace('\\n', ' ').split(' ')
+        symbols = '${}()[].,:;+-*/&|<>=~" '
+        table = str.maketrans('','', symbols)
+        words = list(map(lambda Element: Element.translate(table).strip(), lines))
+        words = list(filter(None, words))
+        #print('check words {}'.format(words))
+        return words   
+
+path = 'C:\LYJ\Python\SimpleText_auto\SimpleText_auto'
+
+    
+final = Read_data(path)
+data, data_f = final.load_text()
+
+
+class Topic(object):
+    
+    def __init__(self, data, data_f):
+        self.data_f = data_f
+        self.data = data
+        
+    def convert_form(self):
+        #this function is mainly to convert the prepared text data back to str, to fufill the 
+        #the input requirement of sklearn CountVectorizer(), 
+        data_trans = []
+        for i in range(len(self.data)):
+            k = ''
+            #print('k is defined')
+            temp = self.data[i]
+            for j in temp:
+                k += j + ' '
+            data_trans.append(k)
+
+        return data_trans
+    
+    def question_1_d_A(self):
+        corpus = self.convert_form()
+        train_x = CountVectorizer().fit_transform(corpus)
+        models = []
+
+        for i in [2, 3, 5, 8, 10]:
+            model = LatentDirichletAllocation(n_components = i, 
+                                              learning_offset = 50, 
+                                              random_state = 27).fit(train_x)
+            models_result = model.transform(train_x)
+            models.append((i, models_result))
+            
+
+        print('Answers for 1 - d :\n {}'.format(models))
+        
+    def question_1_c(self):
+        
+        word_count = self.data_f
+        word_single = set(word_count)
+        #print(word_single)
+        word_count = pd.Series(word_count)
+        word_count.dropna(inplace = True)   
+        
+        print(len(word_count))
+        print(len(word_single))
+        
+        answer = pd.value_counts(word_count).reset_index()
+        answer.columns = ['Word','Frequency']
+        answer['Rank'] = answer.index + 1
+        print('The answer of Question 1_c is\n {}'.format(answer[:50]))
+                        
+        #common_dictionary = Dictionary(self.data)
+        #common_corpus = [common_dictionary.doc2bow(text) for text in self.data]
+
+    def cd(self):        
+        dictionary = Dictionary(self.data)
+        corpus = [dictionary.doc2bow(tmp) for tmp in data]
+        return dictionary, corpus
+    
+    def question_1_d_B(self):
+        dictionary, corpus = self.cd()
+        train_x = self.data
+        #print(train_x)
+        models = []
+        best_score = -np.inf
+        score_list = []
+        best_model = None
+        best_i = None
+        
+        for i in [2, 3, 5, 8, 10]:
+            model = LdaModel(corpus, num_topics = i, id2word = dictionary)
+            cv_tmp = CoherenceModel(model = model, texts = data, dictionary = dictionary, coherence = 'c_v')
+            score = cv_tmp.get_coherence()
+            score_list.append([i, score])
+
+            #print(i, score)
+            if score > best_score:
+                best_score = score
+                best_model = model
+                best_i = i
+
+        df = pd.DataFrame(score_list, columns = ['Num of Topics','score'])
+        df.set_index('Num of Topics', inplace = True)
+        df.plot(figsize  = (16, 9))
+        print('Best number of topic : {}'.format(i))
+        print('Best perplexcity : {:.4f}'.format(best_score))
+        print('Answers for 1 - d :\n {}'.format(models))
+    
+    def topic_display(self, num = 2):
+        dictionary, corpus = self.cd()
+        train_x = self.data
+        model = LdaModel(corpus, num_topics = num, id2word = dictionary)
+        vis_data = gensim.prepare(model, corpus, dictionary)
+        pyLDAvis.enable_notebook()
+        pyLDAvis.display(vis_data)
+    
+    def ten_fold_split(self):
+        corpus = self.convert_form()
+        train_x = CountVectorizer().fit_transform(corpus)
+        df = pd.DataFrame(train_x.toarray())
+            
+        split_num = int(np.floor(len(df) / 10))
+        print(split_num)
+        np.random.seed(27)
+        indices = np.random.permutation(len(df))
+        
+        df_shuffled = df.iloc[indices]
+        train_list = []
+        test_list = []
+        
+        for i in range(10):
+            k = i * split_num
+            test_x_s = df_shuffled.iloc[k : k + split_num]
+            train_x_s = df_shuffled.drop(index = list(range(k, k + split_num)))
+            
+            train_list.append(train_x_s)
+            test_list.append(test_x_s)
+            
+        #print(len(train_list))
+        #print(len(test_list))
+        
+        return train_list, test_list
+    
+    def question_1_e(self):
+        
+        train, test = self.ten_fold_split()
+        models = []
+        best_score = -np.inf
+        score_list = []
+        best_model = None
+        best_i = None
+
+        for i in [2, 3, 5, 8 ,10]:
+            model = LatentDirichletAllocation(n_components = i, 
+                                              learning_offset = 50, 
+                                              random_state = 27)
+            temp_score = []
+            for n in range(10):
+                train_x, test_x = train[n].values, test[n].values
+                model_sector = model.fit(train_x)
+                score_sector = model_sector.score(test_x)
+                temp_score.append(score_sector)
+            
+            score = np.average(temp_score)
+            score_list.append([i, score])
+            #print(i, score)
+            if score > best_score:
+                best_score = score
+                best_model = model
+                best_i = i
+
+        df = pd.DataFrame(score_list, columns = ['Num of Topics','score'])
+        df.set_index('Num of Topics', inplace = True)
+        df.plot(figsize  = (16, 9))
+        print('Best number of topic\n : {}'.format(best_i))
+        print('Best perplexcity :\n {:.4f}'.format(best_score))
+        #print('Answers for 1 - c :\n {}'.format(models))
+        
+
+question_1 = Topic(data, data_f)
+question_1.question_1_c()
+
+%%time
+question_1.question_1_d_B()
+'''
+Comments:
+I use perplexity and coherence score to identify the best number of topics
+in the plot, you can see the 8 topics has the best scores
+'''
+
+dictionary, corpus  = question_1.cd()
+model = LdaModel(corpus, num_topics = 2, id2word = dictionary)
+vis_data = gensim.prepare(model, corpus, dictionary)
+pyLDAvis.enable_notebook()
+pyLDAvis.display(vis_data)
+
+%%time
+model_3 = LdaModel(corpus, num_topics = 3, id2word = dictionary)
+vis_data_3 = gensim.prepare(model_3, corpus, dictionary)
+pyLDAvis.enable_notebook()
+pyLDAvis.display(vis_data_3)
+'''
+comments:
+in order to dig more details about the topics, you can see the graphs below:
+the left graph, we want to see the circles can occupy as many areas as possible 
+and overlap as little as possible
+we can see eight topics are good, and ten is not bad too, but ten topics may overlap more.
+
+the right graph shows the most frequent keywords to depict different topics
+
+'''
+
+%%time
+model_5 = LdaModel(corpus, num_topics = 5, id2word = dictionary)
+vis_data_5 = gensim.prepare(model_5, corpus, dictionary)
+pyLDAvis.enable_notebook()
+pyLDAvis.display(vis_data_5)
+
+%%time
+model_8 = LdaModel(corpus, num_topics = 8, id2word = dictionary)
+vis_data_8 = gensim.prepare(model_8, corpus, dictionary)
+pyLDAvis.enable_notebook()
+pyLDAvis.display(vis_data_8)
